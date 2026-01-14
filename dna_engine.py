@@ -73,3 +73,27 @@ class DNAEngine:
         """Dodatkowa metryka: procentowe odchylenie od zielonej wstęgi (bazy)."""
         df['dist_green_pct'] = ((df['Close'] - df['mid_green']) / df['mid_green']) * 100
         return df['dist_green_pct']
+
+class DNAReporter:
+    @staticmethod
+    def generate_text_report(res):
+        """Generuje sformatowany tekstowy raport DNA PRO V11."""
+        if not res:
+            return "❌ Błąd: Brak danych do wygenerowania raportu."
+        
+        report = []
+        report.append(f"\n🔍 RAPORT DNA PRO V11: {res['ticker']} | {res['date']}")
+        report.append("=" * 70)
+        report.append(f"CENA: {res['price']} PLN | SYGNAŁ: {res['signal']}")
+        report.append("-" * 70)
+        report.append(f"1. HIERARCHIA:   {res['align_desc']}")
+        report.append(f"2. IMPET (RSI):  {res['rsi_val']} -> {res['rsi_desc']}")
+        report.append(f"3. DYNAMIKA:     {res['slope_val']} -> {res['slope_desc']}")
+        report.append(f"4. DYSTANS:      {res['dist_val']}% -> {res['dist_desc']}")
+        report.append("-" * 70)
+        report.append("OSTATNI WOLUMEN (🔥 = wysoki):")
+        for v in res['vol_history']:
+            report.append(f"   {v}")
+        report.append("=" * 70)
+        
+        return "\n".join(report)
