@@ -95,6 +95,59 @@ class DNAAnalyzer:
         except Exception as e:
             print(f"Błąd Analyzer: {e}"); return None
 
+    @staticmethod
+    def predict_price_wave(df, ticker, target_date=None):
+        # Filtrujemy dane do podanej daty (symulacja "teraz")
+        if target_date:
+            df = df.loc[:target_date].copy()
+        
+        last_row = df.iloc[-1]
+        prev_row = df.iloc[-2]
+        
+        # Obliczamy środek kanału (Twoja baza - Green Ribbon)
+        base_price = last_row['mid_green']
+        current_price = last_row['Close']
+        
+        # Obliczamy zmienność (uproszczony ATR)
+        daily_range = (df['High'] - df['Low']).rolling(10).mean().iloc[-1]
+        
+        # Wyznaczamy ekstremum fali (Wstęgi jako bandy)
+        upper_band = last_row['mid_red'] * 1.02 # 2% powyżej czerwonej
+        lower_band = last_row['mid_green'] * 0.98 # 2% poniżej zielonej
+        
+        # Logika przewidywania
+        prediction = ""
+        expected_move = ""
+        confidence = "Niska"
+        
+        # Scenariusz A: Wyprzedanie (Szukamy dołka)
+        if current_price <= last_row['mid_green'] and last_row['rsi'] < 35:
+            prediction = "📈 ODBICIE (Wyczerpanie spadku)"
+            expected_move = f"Powrót w stronę {round(last_row['mid_blue'], 2)}"
+            confidence = "Wysoka" if last_row['rsi'] < 30 else "Średnia"
+            
+        # Scenariusz B: Wykupienie (Szukamy szczytu)
+        elif current_price >= last_row['mid_red'] and last_row['rsi'] > 65:
+            prediction = "📉 KOREKTA (Wyczerpanie wzrostu)"
+            expected_move = f"Spadek w stronę {round(last_row['mid_blue'], 2)}"
+            confidence = "Wysoka" if last_row['rsi'] > 75 else "Średnia"
+            
+        else:
+            prediction = "↔️ KONTYNUACJA (Ruch wewnątrz kanału)"
+            expected_move = "Brak wyraźnego punktu zwrotnego"
+            confidence = "Niska"
+
+        return {
+            "ticker": ticker,
+            "date": df.index[-1].strftime('%Y-%m-%d'),
+            "current_price": round(current_price, 2),
+            "prediction": prediction,
+            "expected_target": expected_move,
+            "confidence": confidence,
+            "rsi": round(last_row['rsi'], 1),
+            "dist_to_base": f"{round(((current_price - base_price)/base_price)*100, 2)}%"
+        }
+
 class DNAReporter:
     """Klasa odpowiedzialna za wizualne formatowanie tekstu."""
     @staticmethod
