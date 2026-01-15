@@ -40,6 +40,38 @@ class DNAEngine:
         
         return buy, sell
 
+    @staticmethod
+    def calculate_all(df):
+        # 1. Obliczanie EMA (Wiązki)
+        red_p = [3, 4, 5, 7, 8, 9, 10, 11, 12, 15]
+        green_p = [30, 35, 40, 45, 50, 60]
+        blue_p = [180, 190, 200, 210, 220]
+        
+        for p in red_p + green_p + blue_p:
+            df[f'EMA_{p}'] = df['Close'].ewm(span=p, adjust=False).mean()
+
+        # 2. Granice wstęg i wskaźniki
+        df['G_Min'] = df[[f'EMA_{p}' for p in green_p]].min(axis=1)
+        df['G_Max'] = df[[f'EMA_{p}' for p in green_p]].max(axis=1)
+        df['B_Min'] = df[[f'EMA_{p}' for p in blue_p]].min(axis=1)
+        df['B_Max'] = df[[f'EMA_{p}' for p in blue_p]].max(axis=1)
+        
+        # 3. Przegrzanie i SL
+        df['Overheat'] = ((df['Close'] - df['EMA_30']) / df['EMA_30']) * 100
+        df['SL_Level'] = df['EMA_60']
+        df['V_Avg_20'] = df['Volume'].rolling(window=20).mean()
+        
+        # 4. Szerokość wstęgi (do akceleracji)
+        df['Ribbon_Width'] = df['G_Max'] - df['G_Min']
+        return df
+
+    @staticmethod
+    def get_rv_h1(df_h1):
+        df_h1['Hour'] = df_h1.index.hour
+        avg_vol = df_h1.groupby('Hour')['Volume'].transform(lambda x: x.rolling(window=20).mean())
+        df_h1['RV'] = df_h1['Volume'] / avg_vol
+        return df_h1
+        
 class DNAAnalyzer:
     """Klasa odpowiedzialna za interpretację wyników i przygotowanie danych raportu."""
     @staticmethod
