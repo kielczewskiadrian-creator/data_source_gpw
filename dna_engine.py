@@ -29,12 +29,10 @@ import pandas as pd
 class DNAEngine:
     @staticmethod
     def calculate_indicators(df):
-        if df is None or df.empty:
-            return df
-        
+        if df is None or df.empty: return df
         df = df.copy()
 
-        # 1. Wstęgi (EMA) - Twoja pierwotna logika
+        # --- WSTĘGI (EMA) - Zgodnie z Pine Script ---
         df['r_s'] = ta.ema(df['Close'], length=10)
         df['r_e'] = ta.ema(df['Close'], length=35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
@@ -47,27 +45,23 @@ class DNAEngine:
         df['g_e'] = ta.ema(df['Close'], length=160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
-        # 2. Oscylatory i Wolumen
-        df['rsi'] = ta.rsi(df['Close'], length=14)
-        df['vol_ma'] = ta.sma(df['Volume'], length=20)
-        
-        # 3. ADX i Dynamika (NAPRAWA BŁĘDU KeyError)
-        # Pobieramy ADX
-        adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-        
-        # WYMUSZENIE ISTNIENIA KOLUMNY 'adx'
-        if isinstance(adx_df, pd.DataFrame):
-            # Jeśli adx_df ma kolumny (np. ADX_14, DMP_14, DMN_14), bierzemy tę z "ADX"
-            cols = [c for c in adx_df.columns if 'ADX' in c]
-            df['adx'] = adx_df[cols[0]] if cols else 0
-        else:
-            # Jeśli to po prostu seria danych
-            df['adx'] = adx_df
-            
-        # Dopiero gdy mamy df['adx'], liczymy slope (bez tego był KeyError)
-        df['adx_slope'] = df['adx'].diff(2).fillna(0)
-        
+        # --- LOGIKA SQUEEZE (4%) ---
+        dist_rb = (df['mid_red'] - df['mid_blue']).abs() / df['mid_blue'] * 100
+        dist_bg = (df['mid_blue'] - df['mid_green']).abs() / df['mid_green'] * 100
+        df['is_squeeze'] = (dist_rb <= 4) & (dist_bg <= 4)
+
         return df
+
+    @staticmethod
+    def get_signals(df):
+        # --- SYGNAŁY KUPNA (ta.crossover(mid_red, mid_blue)) ---
+        # Przecięcie: dzisiaj czerwona nad niebieską, wczoraj pod niebieską
+        buy = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) <= df['mid_blue'].shift(1))
+        
+        # --- SYGNAŁY SPRZEDAŻY (ta.crossunder(mid_red, mid_blue)) ---
+        sell = (df['mid_red'] < df['mid_blue']) & (df['mid_red'].shift(1) >= df['mid_blue'].shift(1))
+
+        return buy, sell
 
     @staticmethod
     def calculate_all(df):
