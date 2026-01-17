@@ -29,18 +29,24 @@ import pandas as pd
 class DNAEngine:
     @staticmethod
     def calculate_indicators(df):
-        if df is None or df.empty: return df
+        """Logika 1:1 z Pine Script: Wstęgi + Squeeze."""
+        if df is None or df.empty:
+            return df
+        
         df = df.copy()
 
-        # --- WSTĘGI (EMA) - Zgodnie z Pine Script ---
+        # --- WSTĘGI (EMA) ---
+        # Czerwona
         df['r_s'] = ta.ema(df['Close'], length=10)
         df['r_e'] = ta.ema(df['Close'], length=35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
         
+        # Niebieska
         df['b_s'] = ta.ema(df['Close'], length=45)
         df['b_e'] = ta.ema(df['Close'], length=85)
         df['mid_blue'] = (df['b_s'] + df['b_e']) / 2
         
+        # Zielona
         df['g_s'] = ta.ema(df['Close'], length=100)
         df['g_e'] = ta.ema(df['Close'], length=160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
@@ -54,14 +60,18 @@ class DNAEngine:
 
     @staticmethod
     def get_signals(df):
-        # --- SYGNAŁY KUPNA (ta.crossover(mid_red, mid_blue)) ---
-        # Przecięcie: dzisiaj czerwona nad niebieską, wczoraj pod niebieską
+        """Sygnały oparte wyłącznie na przecięciu średnich (crossover)."""
+        # Sprawdzenie czy kolumny istnieją
+        if 'mid_red' not in df.columns or 'mid_blue' not in df.columns:
+            return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
+
+        # KUPNO: crossover(mid_red, mid_blue)
         buy = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) <= df['mid_blue'].shift(1))
         
-        # --- SYGNAŁY SPRZEDAŻY (ta.crossunder(mid_red, mid_blue)) ---
+        # SPRZEDAŻ: crossunder(mid_red, mid_blue)
         sell = (df['mid_red'] < df['mid_blue']) & (df['mid_red'].shift(1) >= df['mid_blue'].shift(1))
 
-        return buy, sell
+        return buy.fillna(False), sell.fillna(False)
 
     @staticmethod
     def calculate_all(df):
