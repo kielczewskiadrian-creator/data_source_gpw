@@ -7,7 +7,12 @@ class DNAEngine:
 import pandas as pd
 
 class DNAEngine:
-    @staticmethod
+    import pandas_ta_classic as ta
+import pandas as pd
+
+class DNAEngine:
+    """Zoptymalizowany silnik DNA V11 - naprawia KeyError i wykrywa sygnały na CPS."""
+    
     @staticmethod
     def calculate_indicators(df):
         if df is None or df.empty: return df
@@ -37,37 +42,33 @@ class DNAEngine:
 
     @staticmethod
     def get_signals(df):
-        """Zoptymalizowana wersja bazowa - wykrywa sygnał na CPS sprzed kilku dni."""
-        if 'mid_red' not in df.columns:
+        """Mniej restrykcyjna wersja - wyłapuje sygnał 'kilka dni temu'."""
+        if 'mid_red' not in df.columns or 'adx_slope' not in df.columns:
             return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
 
-        # 1. POLUZOWANE FILTRY (To one blokowały sygnał na CPS)
-        # Obniżamy próg wolumenu i dopuszczamy niższe RSI (odbicie z wyprzedania)
-        vol_ok = df['Volume'] > (df['vol_ma'] * 0.85)  # Zmiana z 1.05 na 0.85
-        rsi_ok = (df['rsi'] > 35) & (df['rsi'] < 75)   # Zmiana z 45 na 35 (kluczowe dla CPS!)
+        # 1. Poluzowane filtry bazowe (Kluczowe dla CPS)
+        vol_ok = df['Volume'] > (df['vol_ma'] * 0.85)  # Obniżone z 1.05
+        rsi_ok = (df['rsi'] > 35) & (df['rsi'] < 75)   # Obniżone z 45 (CPS odbijał niżej)
 
-        # 2. DYNAMIKA RSI (Dodajemy, by złapać moment odbicia widoczny na wykresie)
-        # Sprawdzamy, czy RSI jest nad swoją średnią (jeśli masz rsi_signal w calculate_indicators)
-        # Jeśli nie masz rsi_signal, używamy prostego wzrostu RSI:
-        rsi_rising = df['rsi'] > df['rsi'].shift(1)
-
-        # 3. LOGIKA WEJŚCIA
-        # Przebicie ceny przez środek czerwonej wstęgi
+        # 2. Logika wejścia
+        # Przebicie ceny przez czerwoną wstęgę
         cross_red = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'].shift(1))
-
-        # Przecięcie wstęg (Złoty Krzyż DNA)
+        
+        # Przecięcie wstęg (Golden Cross)
         ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
 
-        # 4. FINALNY SYGNAŁ KUPNA
-        # Zmniejszamy wagę ADX Slope, bo na dnie ADX często jeszcze nie rośnie
-        buy = ((cross_red & (df['adx_slope'] > 0.05)) | ribbon_cross) & vol_ok & rsi_ok & rsi_rising
+        # 3. Finalny sygnał KUPNA
+        # Zmniejszamy wymagany adx_slope do 0.05, aby szybciej złapać trend
+        buy = ((cross_red & (df['adx_slope'] > 0.05)) | ribbon_cross) & vol_ok & rsi_ok
 
-        # 5. FINALNY SYGNAŁ SPRZEDAŻY
-        # Wyjście pod niebieską wstęgę lub ekstremalne wykupienie
-        sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 80)
+        # 4. Finalny sygnał SPRZEDAŻY
+        sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
 
-        # Zwracamy tylko pierwszy dzień sygnału, by nie "zaśmiecać" wykresu
-        return buy & (~buy.shift(1).fillna(False)), sell & (~sell.shift(1).fillna(False))
+        # Czyścimy sygnały, by pokazywać tylko początek trendu (pierwszą strzałkę)
+        final_buy = buy & (~buy.shift(1).fillna(False))
+        final_sell = sell & (~sell.shift(1).fillna(False))
+
+        return final_buy, final_sell
 
     @staticmethod
     def calculate_all(df):
