@@ -35,28 +35,25 @@ class DNAEngine:
 
     @staticmethod
     def get_signals(df):
-        # 1. Agresywne wykrywanie pędu (Momentum)
-        # Sprawdzamy, czy RSI jest nad swoją średnią (to był Twój kluczowy wskaźnik)
-        rsi_bullish = df['rsi'] > df['rsi_signal']
-        
-        # 2. Powrót ceny (Cena przecina krótką średnią r_s)
-        # Używamy .rolling().max(), aby "pamiętać" wybicie przez 2-3 dni
-        price_rebound = df['Close'] > df['r_s']
-        
-        # 3. Filtr trendu (Mocno poluzowany)
-        # Wystarczy, że cena jest powyżej zielonej wstęgi LUB czerwona wstęga zaczyna rosnąć
-        trend_ok = (df['Close'] > df['mid_green'] * 0.95) | (df['mid_red'].diff(1) > 0)
+        """Zwraca flagi sygnałów Kupna (BUY) i Sprzedaży (SELL)."""
+        if 'mid_red' not in df.columns:
+            return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
 
-        # 4. Łączymy sygnał
-        # Sygnał "KUP" zapala się, gdy rsi_bullish i price_rebound spotykają się po raz pierwszy
-        buy_logic = rsi_bullish & price_rebound & trend_ok
-        
-        # Wykrywamy tylko MOMENT zapalenia się sygnału (początek białej linii/strzałki)
-        buy = buy_logic & (~buy_logic.shift(1).fillna(False))
+        # Warunki bazowe (Filtry)
+        vol_ok = df['Volume'] > (df['vol_ma'] * 1.05)
+        rsi_ok = (df['rsi'] > 45) & (df['rsi'] < 80)
 
-        # 5. Sprzedaż (Gdy cena wpada pod niebieską wstęgę)
-        sell_logic = df['Close'] < df['mid_blue']
-        sell = sell_logic & (~sell_logic.shift(1).fillna(False))
+        # Logika 1: Przebicie ceny przez czerwoną wstęgę (Dip Buy)
+        cross_red = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'].shift(1))
+
+        # Logika 2: Przecięcie wstęg (Trend Buy)
+        ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
+
+        # Finalny sygnał KUPNA
+        buy = ((cross_red & (df['adx_slope'] > 0.15)) | ribbon_cross) & vol_ok & rsi_ok
+
+        # Finalny sygnał SPRZEDAŻY
+        sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
 
         return buy, sell
 
