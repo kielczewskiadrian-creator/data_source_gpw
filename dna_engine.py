@@ -3,68 +3,58 @@ import pandas as pd
 
 class DNAEngine:
     """Klasa odpowiedzialna za matematykę i sygnały."""
-    @staticmethod
+    import pandas_ta_classic as ta
+import pandas as pd
+
+class DNAEngine:
     @staticmethod
     def calculate_indicators(df):
         if df is None or df.empty: return df
         df = df.copy()
 
-        # 1. Wstęgi DNA - Zmiana na EMA (lepiej oddaje dynamikę z Twojego wykresu)
-        # Krótka (Czerwona) - Momentum
-        df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 25)
+        # 1. Wstęgi DNA - EMA (Kluczowe dla płynności sygnałów)
+        df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
         
-        # Średnia (Niebieska) - Trend główny
-        df['b_s'], df['b_e'] = ta.ema(df['Close'], 45), ta.ema(df['Close'], 75)
+        df['b_s'], df['b_e'] = ta.ema(df['Close'], 45), ta.ema(df['Close'], 85)
         df['mid_blue'] = (df['b_s'] + df['b_e']) / 2
         
-        # Długa (Zielona) - Baza/Wsparcie
-        df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 150)
+        df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
-        # 2. RSI ze średnią (Wygładzenie sygnałów)
+        # 2. RSI z wygładzoną średnią (Klucz do wyłapania dołka na CPS)
         df['rsi'] = ta.rsi(df['Close'], 14)
-        df['rsi_sma'] = df['rsi'].rolling(7).mean() # Średnia RSI do potwierdzania zwrotów
+        df['rsi_signal'] = ta.ema(df['rsi'], 9)  # Średnia sygnałowa dla RSI
 
         # 3. Wolumen i ADX
         df['vol_ma'] = ta.sma(df['Volume'], 20)
         adx_df = ta.adx(df['High'], df['Low'], df['Close'], 14)
         df['adx'] = adx_df['ADX_14']
         
-        # Nachylenie średniej czerwonej (Trend krótkoterminowy)
-        df['red_slope'] = df['mid_red'].diff(3) 
-        
         return df
 
     @staticmethod
     def get_signals(df):
-        """Mniej restrykcyjna logika sygnałów oparta na nachyleniu i powrocie do trendu"""
+        # --- LOGIKA AGRESYWNEGO KUPNA (Mean Reversion + Momentum) ---
         
-        # WARUNKI KUPNA (Buy)
-        # 1. Cena wraca nad czerwoną wstęgę LUB odbija się od niebieskiej/zielonej
-        price_rebound = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'])
+        # A. Cena wraca do gry (przecina r_s, czyli górną krawędź czerwonej wstęgi)
+        price_rebound = (df['Close'] > df['r_s']) & (df['Close'].shift(1) <= df['r_s'].shift(1))
         
-        # 2. RSI zaczyna rosnąć (przebija swoją średnią) - kluczowe na Twoim wykresie
-        rsi_turning_up = (df['rsi'] > df['rsi_sma']) & (df['rsi'] < 70)
+        # B. RSI odbija od dołu i przecina swoją średnią (Impet rośnie)
+        rsi_ok = (df['rsi'] > df['rsi_signal']) & (df['rsi'].shift(1) <= df['rsi_signal'].shift(1))
         
-        # 3. Dodatkowe potwierdzenie: nachylenie wstęgi czerwonej staje się dodatnie
-        slope_ok = df['red_slope'] > 0
-        
-        # 4. Wolumen (nieco mniej restrykcyjny próg)
-        vol_ok = df['Volume'] > (df['vol_ma'] * 0.9)
+        # C. Filtr trendu: cena nie może być zbyt daleko pod zieloną wstęgą
+        trend_filter = df['Close'] > (df['mid_green'] * 0.85) 
 
-        # FINALNY SYGNAŁ KUPNA
-        buy = (price_rebound & rsi_turning_up & slope_ok & vol_ok) | \
-              ((df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'])) # Golden Cross wstęg
+        # D. Wolumen: wystarczy, że nie maleje drastycznie (GPW ma niską płynność)
+        vol_ok = df['Volume'] > (df['vol_ma'] * 0.8)
 
-        # WARUNKI SPRZEDAŻY (Sell)
-        # 1. Przebicie niebieskiej wstęgi w dół (koniec trendu średniego)
-        price_break_down = (df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'])
-        
-        # 2. Dywergencja lub ekstremalne wykupienie
-        overbought = (df['rsi'] > 80) & (df['rsi'] < df['rsi_sma']) 
-        
-        sell = price_break_down | overbought
+        buy = price_rebound & rsi_ok & trend_filter & vol_ok
+
+        # --- LOGIKA SPRZEDAŻY ---
+        # Cena spada poniżej niebieskiej wstęgi LUB RSI jest ekstremalnie wysokie i zawraca
+        sell = (df['Close'] < df['mid_blue']) & (df['Close'].shift(1) >= df['mid_blue'].shift(1)) | \
+               (df['rsi'] > 75) & (df['rsi'] < df['rsi_signal'])
         
         return buy, sell
 
