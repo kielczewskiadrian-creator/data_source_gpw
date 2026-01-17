@@ -8,11 +8,12 @@ import pandas as pd
 
 class DNAEngine:
     @staticmethod
+    @staticmethod
     def calculate_indicators(df):
         if df is None or df.empty: return df
         df = df.copy()
 
-        # 1. Wstęgi DNA - EMA (Kluczowe dla płynności sygnałów)
+        # 1. Wstęgi DNA - EMA
         df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
         
@@ -22,14 +23,15 @@ class DNAEngine:
         df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
-        # 2. RSI z wygładzoną średnią (Klucz do wyłapania dołka na CPS)
+        # 2. RSI i Wolumen
         df['rsi'] = ta.rsi(df['Close'], 14)
-        df['rsi_signal'] = ta.ema(df['rsi'], 9)  # Średnia sygnałowa dla RSI
-
-        # 3. Wolumen i ADX
         df['vol_ma'] = ta.sma(df['Volume'], 20)
+        
+        # 3. ADX i ADX SLOPE (Naprawa błędu KeyError)
         adx_df = ta.adx(df['High'], df['Low'], df['Close'], 14)
         df['adx'] = adx_df['ADX_14']
+        # Obliczamy slope jako zmianę ADX z ostatnich 2 sesji
+        df['adx_slope'] = df['adx'].diff(2)
         
         return df
 
