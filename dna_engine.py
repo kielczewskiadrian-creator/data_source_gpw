@@ -19,15 +19,18 @@ import pandas as pd
 class DNAEngine:
     """Zoptymalizowany silnik DNA - naprawia błąd adx_slope i wykrywa wcześniejsze sygnały."""
     
+    import pandas_ta_classic as ta
+import pandas as pd
+
+class DNAEngine:
     @staticmethod
     def calculate_indicators(df):
-        """Twoja pierwotna logika z poprawką na błąd nazewnictwa kolumn."""
         if df is None or df.empty:
             return df
         
         df = df.copy()
 
-        # 1. Wstęgi (Ribbons) - EMA
+        # 1. Wstęgi (EMA) - Twoja oryginalna logika
         df['r_s'] = ta.ema(df['Close'], length=10)
         df['r_e'] = ta.ema(df['Close'], length=35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
@@ -45,32 +48,28 @@ class DNAEngine:
         df['vol_ma'] = ta.sma(df['Volume'], length=20)
         
         # 3. ADX i Dynamika (NAPRAWA BŁĘDU KeyError)
-        try:
-            adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-            # Sprawdzamy jak biblioteka nazwała kolumnę i przypisujemy ją do 'adx'
-            if 'ADX_14' in adx_df.columns:
-                df['adx'] = adx_df['ADX_14']
-            else:
-                # Jeśli nazwa jest inna, bierzemy pierwszą kolumnę z brzegu (to zazwyczaj ADX)
-                df['adx'] = adx_df.iloc[:, 0]
+        adx_data = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+        
+        # Kluczowa poprawka: upewniamy się, że kolumna 'adx' istnieje przed liczeniem slope
+        if isinstance(adx_data, pd.DataFrame):
+            # Szukamy kolumny która zaczyna się od 'ADX'
+            adx_col = [c for c in adx_data.columns if 'ADX' in c][0]
+            df['adx'] = adx_data[adx_col]
+        else:
+            df['adx'] = adx_data
             
-            # Teraz diff(2) na pewno zadziała, bo df['adx'] już istnieje
-            df['adx_slope'] = df['adx'].diff(2)
-        except Exception as e:
-            print(f"⚠️ Uwaga: Błąd kalkulacji ADX: {e}")
-            df['adx'] = 0
-            df['adx_slope'] = 0
+        # Teraz bezpiecznie tworzymy adx_slope
+        df['adx_slope'] = df['adx'].diff(2)
         
         return df
 
     @staticmethod
     def get_signals(df):
-        """Twoja pierwotna logika sygnałów - bez zmian w parametrach."""
-        # Zabezpieczenie przed brakiem kolumn (np. zbyt mało danych)
+        # Sprawdzenie czy kolumny istnieją (bezpiecznik)
         if 'adx_slope' not in df.columns:
             return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
 
-        # Filtry bazowe (Twoje ustawienia)
+        # Filtry bazowe (Twoje 100% oryginalne ustawienia)
         vol_ok = df['Volume'] > (df['vol_ma'] * 1.05)
         rsi_ok = (df['rsi'] > 45) & (df['rsi'] < 80)
         
@@ -80,13 +79,12 @@ class DNAEngine:
         # Logika B: Przecięcie czerwonej wstęgi nad niebieską
         ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
         
-        # Twoja agregacja (ADX_Slope > 0.15)
+        # Agregacja sygnału kupna (Dynamika ADX_Slope > 0.15)
         buy = ((cross_red & (df['adx_slope'] > 0.15)) | ribbon_cross) & vol_ok & rsi_ok
         
-        # Sprzedaż
+        # Sygnał sprzedaży
         sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
         
-        # Konwersja na czyste sygnały True/False (usuwa ewentualne wartości NaN)
         return buy.fillna(False), sell.fillna(False)
 
     @staticmethod
