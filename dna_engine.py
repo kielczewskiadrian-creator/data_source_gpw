@@ -35,27 +35,29 @@ class DNAEngine:
 
     @staticmethod
     def get_signals(df):
-        # --- LOGIKA AGRESYWNEGO KUPNA (Mean Reversion + Momentum) ---
+        # 1. Agresywne wykrywanie pędu (Momentum)
+        # Sprawdzamy, czy RSI jest nad swoją średnią (to był Twój kluczowy wskaźnik)
+        rsi_bullish = df['rsi'] > df['rsi_signal']
         
-        # A. Cena wraca do gry (przecina r_s, czyli górną krawędź czerwonej wstęgi)
-        price_rebound = (df['Close'] > df['r_s']) & (df['Close'].shift(1) <= df['r_s'].shift(1))
+        # 2. Powrót ceny (Cena przecina krótką średnią r_s)
+        # Używamy .rolling().max(), aby "pamiętać" wybicie przez 2-3 dni
+        price_rebound = df['Close'] > df['r_s']
         
-        # B. RSI odbija od dołu i przecina swoją średnią (Impet rośnie)
-        rsi_ok = (df['rsi'] > df['rsi_signal']) & (df['rsi'].shift(1) <= df['rsi_signal'].shift(1))
-        
-        # C. Filtr trendu: cena nie może być zbyt daleko pod zieloną wstęgą
-        trend_filter = df['Close'] > (df['mid_green'] * 0.85) 
+        # 3. Filtr trendu (Mocno poluzowany)
+        # Wystarczy, że cena jest powyżej zielonej wstęgi LUB czerwona wstęga zaczyna rosnąć
+        trend_ok = (df['Close'] > df['mid_green'] * 0.95) | (df['mid_red'].diff(1) > 0)
 
-        # D. Wolumen: wystarczy, że nie maleje drastycznie (GPW ma niską płynność)
-        vol_ok = df['Volume'] > (df['vol_ma'] * 0.8)
-
-        buy = price_rebound & rsi_ok & trend_filter & vol_ok
-
-        # --- LOGIKA SPRZEDAŻY ---
-        # Cena spada poniżej niebieskiej wstęgi LUB RSI jest ekstremalnie wysokie i zawraca
-        sell = (df['Close'] < df['mid_blue']) & (df['Close'].shift(1) >= df['mid_blue'].shift(1)) | \
-               (df['rsi'] > 75) & (df['rsi'] < df['rsi_signal'])
+        # 4. Łączymy sygnał
+        # Sygnał "KUP" zapala się, gdy rsi_bullish i price_rebound spotykają się po raz pierwszy
+        buy_logic = rsi_bullish & price_rebound & trend_ok
         
+        # Wykrywamy tylko MOMENT zapalenia się sygnału (początek białej linii/strzałki)
+        buy = buy_logic & (~buy_logic.shift(1).fillna(False))
+
+        # 5. Sprzedaż (Gdy cena wpada pod niebieską wstęgę)
+        sell_logic = df['Close'] < df['mid_blue']
+        sell = sell_logic & (~sell_logic.shift(1).fillna(False))
+
         return buy, sell
 
     @staticmethod
