@@ -4,39 +4,67 @@ import pandas as pd
 class DNAEngine:
     """Klasa odpowiedzialna za matematykę i sygnały."""
     @staticmethod
+    @staticmethod
     def calculate_indicators(df):
         if df is None or df.empty: return df
         df = df.copy()
 
-        # Wstęgi DNA - EMA
-        df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 35)
+        # 1. Wstęgi DNA - Zmiana na EMA (lepiej oddaje dynamikę z Twojego wykresu)
+        # Krótka (Czerwona) - Momentum
+        df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 25)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
         
-        df['b_s'], df['b_e'] = ta.ema(df['Close'], 45), ta.ema(df['Close'], 85)
+        # Średnia (Niebieska) - Trend główny
+        df['b_s'], df['b_e'] = ta.ema(df['Close'], 45), ta.ema(df['Close'], 75)
         df['mid_blue'] = (df['b_s'] + df['b_e']) / 2
         
-        df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 160)
+        # Długa (Zielona) - Baza/Wsparcie
+        df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 150)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
-        # Oscylatory i Wolumen
+        # 2. RSI ze średnią (Wygładzenie sygnałów)
         df['rsi'] = ta.rsi(df['Close'], 14)
+        df['rsi_sma'] = df['rsi'].rolling(7).mean() # Średnia RSI do potwierdzania zwrotów
+
+        # 3. Wolumen i ADX
         df['vol_ma'] = ta.sma(df['Volume'], 20)
-        
         adx_df = ta.adx(df['High'], df['Low'], df['Close'], 14)
         df['adx'] = adx_df['ADX_14']
-        df['adx_slope'] = df['adx'].diff(2)
+        
+        # Nachylenie średniej czerwonej (Trend krótkoterminowy)
+        df['red_slope'] = df['mid_red'].diff(3) 
         
         return df
 
     @staticmethod
     def get_signals(df):
-        vol_ok = df['Volume'] > (df['vol_ma'] * 1.05)
-        rsi_ok = (df['rsi'] > 45) & (df['rsi'] < 80)
-        cross_red = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'].shift(1))
-        ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
+        """Mniej restrykcyjna logika sygnałów oparta na nachyleniu i powrocie do trendu"""
         
-        buy = ((cross_red & (df['adx_slope'] > 0.15)) | ribbon_cross) & vol_ok & rsi_ok
-        sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
+        # WARUNKI KUPNA (Buy)
+        # 1. Cena wraca nad czerwoną wstęgę LUB odbija się od niebieskiej/zielonej
+        price_rebound = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'])
+        
+        # 2. RSI zaczyna rosnąć (przebija swoją średnią) - kluczowe na Twoim wykresie
+        rsi_turning_up = (df['rsi'] > df['rsi_sma']) & (df['rsi'] < 70)
+        
+        # 3. Dodatkowe potwierdzenie: nachylenie wstęgi czerwonej staje się dodatnie
+        slope_ok = df['red_slope'] > 0
+        
+        # 4. Wolumen (nieco mniej restrykcyjny próg)
+        vol_ok = df['Volume'] > (df['vol_ma'] * 0.9)
+
+        # FINALNY SYGNAŁ KUPNA
+        buy = (price_rebound & rsi_turning_up & slope_ok & vol_ok) | \
+              ((df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'])) # Golden Cross wstęg
+
+        # WARUNKI SPRZEDAŻY (Sell)
+        # 1. Przebicie niebieskiej wstęgi w dół (koniec trendu średniego)
+        price_break_down = (df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'])
+        
+        # 2. Dywergencja lub ekstremalne wykupienie
+        overbought = (df['rsi'] > 80) & (df['rsi'] < df['rsi_sma']) 
+        
+        sell = price_break_down | overbought
         
         return buy, sell
 
