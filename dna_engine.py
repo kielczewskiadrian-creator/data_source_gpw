@@ -19,64 +19,67 @@ import pandas as pd
 class DNAEngine:
     """Zoptymalizowany silnik DNA - naprawia błąd adx_slope i wykrywa wcześniejsze sygnały."""
     
+    
     @staticmethod
     def calculate_indicators(df):
-        if df is None or df.empty: return df
+        """Oblicza pełny zestaw wskaźników DNA na danych historycznych."""
+        if df is None or df.empty:
+            return df
+        
+        # Kopia, aby uniknąć SettingWithCopyWarning
         df = df.copy()
 
-        # 1. Wstęgi DNA - EMA
-        df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 35)
+        # 1. Wstęgi (Ribbons) - EMA
+        # Red Ribbon (Krótki trend)
+        df['r_s'] = ta.ema(df['Close'], length=10)
+        df['r_e'] = ta.ema(df['Close'], length=35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
         
-        df['b_s'], df['b_e'] = ta.ema(df['Close'], 45), ta.ema(df['Close'], 85)
+        # Blue Ribbon (Średni trend)
+        df['b_s'] = ta.ema(df['Close'], length=45)
+        df['b_e'] = ta.ema(df['Close'], length=85)
         df['mid_blue'] = (df['b_s'] + df['b_e']) / 2
         
-        df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 160)
+        # Green Ribbon (Długi trend / Baza)
+        df['g_s'] = ta.ema(df['Close'], length=100)
+        df['g_e'] = ta.ema(df['Close'], length=160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
         # 2. Oscylatory i Wolumen
-        df['rsi'] = ta.rsi(df['Close'], 14)
-        df['vol_ma'] = ta.sma(df['Volume'], 20)
+        df['rsi'] = ta.rsi(df['Close'], length=14)
+        df['vol_ma'] = ta.sma(df['Volume'], length=20)
         
-        # 3. ADX i kluczowy ADX_SLOPE (Naprawa KeyError)
-        adx_df = ta.adx(df['High'], df['Low'], df['Close'], 14)
+        # 3. ADX i Dynamika (Slope)
+        # pandas_ta_classic zwraca DataFrame przy ADX
+        adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
         df['adx'] = adx_df['ADX_14']
-        # Obliczamy zmianę ADX z 2 sesji, aby złapać dynamikę trendu
         df['adx_slope'] = df['adx'].diff(2)
         
         return df
 
     @staticmethod
     def get_signals(df):
-        """Wersja dostosowana do wczesnego wykrywania trendu (np. na CPS)."""
-        if 'mid_red' not in df.columns or 'adx_slope' not in df.columns:
-            return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
-
-        # --- FILTRY (Poluzowane, by złapać sygnał sprzed kilku dni) ---
-        # 1. Wolumen: nie musi być ekstremalny (0.9 zamiast 1.05)
-        vol_ok = df['Volume'] > (df['vol_ma'] * 0.9)
-        # 2. RSI: CPS odbijał przy RSI ok. 40, więc próg 45 był za wysoki
-        rsi_ok = (df['rsi'] > 38) & (df['rsi'] < 75)
-
-        # --- LOGIKA WEJŚCIA ---
-        # A. Przecięcie ceny przez czerwoną wstęgę (szybki sygnał)
+        """
+        Zwraca dwie serie logiczne (True/False): sygnał kupna i sprzedaży.
+        Zoptymalizowane pod GPW (wyłapuje ruchy typu 8 stycznia na WPL).
+        """
+        # Filtry bazowe
+        vol_ok = df['Volume'] > (df['vol_ma'] * 1.05)
+        rsi_ok = (df['rsi'] > 45) & (df['rsi'] < 80)
+        
+        # Logika A: Cena przecina czerwoną wstęgę od dołu (Dip Buy)
         cross_red = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'].shift(1))
         
-        # B. Przecięcie wstęg (potwierdzenie trendu)
+        # Logika B: Przecięcie czerwonej wstęgi nad niebieską (Trend Buy)
         ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
-
-        # --- FINALNY SYGNAŁ KUPNA ---
-        # Poluzowany adx_slope (0.05 zamiast 0.15), aby szybciej reagować na zmianę kierunku
-        buy = ((cross_red & (df['adx_slope'] > 0.05)) | ribbon_cross) & vol_ok & rsi_ok
-
-        # --- FINALNY SYGNAŁ SPRZEDAŻY ---
+        
+        # Agregacja sygnału kupna (Dynamika ADX_Slope > 0.15)
+        buy = ((cross_red & (df['adx_slope'] > 0.15)) | ribbon_cross) & vol_ok & rsi_ok
+        
+        # Sygnał sprzedaży (Przebicie niebieskiej wstęgi lub ekstremalne wykupienie)
         sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
-
-        # Filtrowanie, aby pokazać tylko PIERWSZY dzień sygnału
-        final_buy = buy & (~buy.shift(1).fillna(False))
-        final_sell = sell & (~sell.shift(1).fillna(False))
-
-        return final_buy, final_sell
+        
+        return buy, sell
 
     @staticmethod
     def calculate_all(df):
