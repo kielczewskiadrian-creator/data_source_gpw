@@ -13,6 +13,12 @@ import pandas as pd
 class DNAEngine:
     """Zoptymalizowany silnik DNA V11 - naprawia KeyError i wykrywa sygnały na CPS."""
     
+    import pandas_ta_classic as ta
+import pandas as pd
+
+class DNAEngine:
+    """Zoptymalizowany silnik DNA - naprawia błąd adx_slope i wykrywa wcześniejsze sygnały."""
+    
     @staticmethod
     def calculate_indicators(df):
         if df is None or df.empty: return df
@@ -28,43 +34,45 @@ class DNAEngine:
         df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
-        # 2. RSI i Wolumen
+        # 2. Oscylatory i Wolumen
         df['rsi'] = ta.rsi(df['Close'], 14)
         df['vol_ma'] = ta.sma(df['Volume'], 20)
         
-        # 3. ADX i ADX SLOPE (Naprawa błędu KeyError)
+        # 3. ADX i kluczowy ADX_SLOPE (Naprawa KeyError)
         adx_df = ta.adx(df['High'], df['Low'], df['Close'], 14)
         df['adx'] = adx_df['ADX_14']
-        # Obliczamy slope jako zmianę ADX z ostatnich 2 sesji
+        # Obliczamy zmianę ADX z 2 sesji, aby złapać dynamikę trendu
         df['adx_slope'] = df['adx'].diff(2)
         
         return df
 
     @staticmethod
     def get_signals(df):
-        """Mniej restrykcyjna wersja - wyłapuje sygnał 'kilka dni temu'."""
+        """Wersja dostosowana do wczesnego wykrywania trendu (np. na CPS)."""
         if 'mid_red' not in df.columns or 'adx_slope' not in df.columns:
             return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
 
-        # 1. Poluzowane filtry bazowe (Kluczowe dla CPS)
-        vol_ok = df['Volume'] > (df['vol_ma'] * 0.85)  # Obniżone z 1.05
-        rsi_ok = (df['rsi'] > 35) & (df['rsi'] < 75)   # Obniżone z 45 (CPS odbijał niżej)
+        # --- FILTRY (Poluzowane, by złapać sygnał sprzed kilku dni) ---
+        # 1. Wolumen: nie musi być ekstremalny (0.9 zamiast 1.05)
+        vol_ok = df['Volume'] > (df['vol_ma'] * 0.9)
+        # 2. RSI: CPS odbijał przy RSI ok. 40, więc próg 45 był za wysoki
+        rsi_ok = (df['rsi'] > 38) & (df['rsi'] < 75)
 
-        # 2. Logika wejścia
-        # Przebicie ceny przez czerwoną wstęgę
+        # --- LOGIKA WEJŚCIA ---
+        # A. Przecięcie ceny przez czerwoną wstęgę (szybki sygnał)
         cross_red = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'].shift(1))
         
-        # Przecięcie wstęg (Golden Cross)
+        # B. Przecięcie wstęg (potwierdzenie trendu)
         ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
 
-        # 3. Finalny sygnał KUPNA
-        # Zmniejszamy wymagany adx_slope do 0.05, aby szybciej złapać trend
+        # --- FINALNY SYGNAŁ KUPNA ---
+        # Poluzowany adx_slope (0.05 zamiast 0.15), aby szybciej reagować na zmianę kierunku
         buy = ((cross_red & (df['adx_slope'] > 0.05)) | ribbon_cross) & vol_ok & rsi_ok
 
-        # 4. Finalny sygnał SPRZEDAŻY
+        # --- FINALNY SYGNAŁ SPRZEDAŻY ---
         sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
 
-        # Czyścimy sygnały, by pokazywać tylko początek trendu (pierwszą strzałkę)
+        # Filtrowanie, aby pokazać tylko PIERWSZY dzień sygnału
         final_buy = buy & (~buy.shift(1).fillna(False))
         final_sell = sell & (~sell.shift(1).fillna(False))
 
