@@ -27,31 +27,38 @@ class DNAEngine:
 import pandas as pd
 
 class DNAEngine:
+    import pandas as pd
+import pandas_ta_classic as ta
+
+class DNAEngine:
     @staticmethod
     def calculate_indicators(df):
-        """Logika 1:1 z Pine Script: Wstęgi + Squeeze."""
+        """Logika 1:1 z Pine Script + dane pomocnicze do raportu."""
         if df is None or df.empty:
             return df
         
         df = df.copy()
 
-        # --- WSTĘGI (EMA) ---
-        # Czerwona
-        df['r_s'] = ta.ema(df['Close'], length=10)
-        df['r_e'] = ta.ema(df['Close'], length=35)
+        # --- WSTĘGI (EMA) - BAZA SYGNAŁÓW ---
+        df['r_s'], df['r_e'] = ta.ema(df['Close'], 10), ta.ema(df['Close'], 35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
         
-        # Niebieska
-        df['b_s'] = ta.ema(df['Close'], length=45)
-        df['b_e'] = ta.ema(df['Close'], length=85)
+        df['b_s'], df['b_e'] = ta.ema(df['Close'], 45), ta.ema(df['Close'], 85)
         df['mid_blue'] = (df['b_s'] + df['b_e']) / 2
         
-        # Zielona
-        df['g_s'] = ta.ema(df['Close'], length=100)
-        df['g_e'] = ta.ema(df['Close'], length=160)
+        df['g_s'], df['g_e'] = ta.ema(df['Close'], 100), ta.ema(df['Close'], 160)
         df['mid_green'] = (df['g_s'] + df['g_e']) / 2
 
-        # --- LOGIKA SQUEEZE (4%) ---
+        # --- DANE DO ANALYZERA (Nie wpływają na strzałki) ---
+        df['rsi'] = ta.rsi(df['Close'], length=14)
+        df['vol_ma'] = ta.sma(df['Volume'], length=20)
+        
+        # Bezpieczny ADX (zapobiega błędom w raporcie)
+        adx_res = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+        df['adx'] = adx_res.iloc[:, 0] if isinstance(adx_res, pd.DataFrame) else adx_res
+        df['adx_slope'] = df['adx'].diff(2).fillna(0)
+
+        # --- LOGIKA SQUEEZE ---
         dist_rb = (df['mid_red'] - df['mid_blue']).abs() / df['mid_blue'] * 100
         dist_bg = (df['mid_blue'] - df['mid_green']).abs() / df['mid_green'] * 100
         df['is_squeeze'] = (dist_rb <= 4) & (dist_bg <= 4)
@@ -60,18 +67,18 @@ class DNAEngine:
 
     @staticmethod
     def get_signals(df):
-        """Sygnały oparte wyłącznie na przecięciu średnich (crossover)."""
-        # Sprawdzenie czy kolumny istnieją
+        """Sygnały 1:1 z Pine Script: crossover(mid_red, mid_blue)."""
         if 'mid_red' not in df.columns or 'mid_blue' not in df.columns:
             return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
 
-        # KUPNO: crossover(mid_red, mid_blue)
+        # KUPNO
         buy = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) <= df['mid_blue'].shift(1))
-        
-        # SPRZEDAŻ: crossunder(mid_red, mid_blue)
+        # SPRZEDAŻ
         sell = (df['mid_red'] < df['mid_blue']) & (df['mid_red'].shift(1) >= df['mid_blue'].shift(1))
 
         return buy.fillna(False), sell.fillna(False)
+
+# Pamiętaj, aby poniżej w pliku dna_engine.py znajdowały się klasy DNAAnalyzer i DNAReporter
 
     @staticmethod
     def calculate_all(df):
