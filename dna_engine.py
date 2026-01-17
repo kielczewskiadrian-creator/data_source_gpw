@@ -34,7 +34,7 @@ class DNAEngine:
         
         df = df.copy()
 
-        # 1. Wstęgi (EMA)
+        # 1. Wstęgi (EMA) - Twoja pierwotna logika
         df['r_s'] = ta.ema(df['Close'], length=10)
         df['r_e'] = ta.ema(df['Close'], length=35)
         df['mid_red'] = (df['r_s'] + df['r_e']) / 2
@@ -52,46 +52,22 @@ class DNAEngine:
         df['vol_ma'] = ta.sma(df['Volume'], length=20)
         
         # 3. ADX i Dynamika (NAPRAWA BŁĘDU KeyError)
-        adx_data = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+        # Pobieramy ADX
+        adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
         
-        # Sprawdzamy, czy adx_data jest DataFrame i wyciągamy kolumnę ADX
-        if isinstance(adx_data, pd.DataFrame):
-            # Biblioteka często nazywa to ADX_14, szukamy kolumny z "ADX" w nazwie
-            adx_col = [c for c in adx_data.columns if 'ADX' in c][0]
-            df['adx'] = adx_data[adx_col]
+        # WYMUSZENIE ISTNIENIA KOLUMNY 'adx'
+        if isinstance(adx_df, pd.DataFrame):
+            # Jeśli adx_df ma kolumny (np. ADX_14, DMP_14, DMN_14), bierzemy tę z "ADX"
+            cols = [c for c in adx_df.columns if 'ADX' in c]
+            df['adx'] = adx_df[cols[0]] if cols else 0
         else:
-            df['adx'] = adx_data
+            # Jeśli to po prostu seria danych
+            df['adx'] = adx_df
             
-        # Obliczamy slope – teraz kolumna 'adx' na pewno istnieje
-        df['adx_slope'] = df['adx'].diff(2)
+        # Dopiero gdy mamy df['adx'], liczymy slope (bez tego był KeyError)
+        df['adx_slope'] = df['adx'].diff(2).fillna(0)
         
         return df
-
-    @staticmethod
-    def get_signals(df):
-        # Bezpiecznik: jeśli brakuje danych do ADX, zwróć puste sygnały
-        if 'adx_slope' not in df.columns:
-            return pd.Series(False, index=df.index), pd.Series(False, index=df.index)
-
-        # Filtry bazowe (Twoja oryginalna logika)
-        vol_ok = df['Volume'] > (df['vol_ma'] * 1.05)
-        
-        # UWAGA: Obniżyłem RSI z 45 na 40, żeby "złapać" CPS sprzed kilku dni
-        rsi_ok = (df['rsi'] > 40) & (df['rsi'] < 80)
-        
-        # Logika A: Cena przecina czerwoną wstęgę od dołu
-        cross_red = (df['Close'] > df['mid_red']) & (df['Close'].shift(1) < df['mid_red'].shift(1))
-        
-        # Logika B: Przecięcie czerwonej wstęgi nad niebieską
-        ribbon_cross = (df['mid_red'] > df['mid_blue']) & (df['mid_red'].shift(1) < df['mid_blue'].shift(1))
-        
-        # Sygnał Kupna (Twoje ADX_Slope > 0.15)
-        buy = ((cross_red & (df['adx_slope'] > 0.15)) | ribbon_cross) & vol_ok & rsi_ok
-        
-        # Sygnał Sprzedaży
-        sell = ((df['Close'] < df['mid_blue']) & (df['Close'].shift(1) > df['mid_blue'].shift(1))) | (df['rsi'] > 85)
-        
-        return buy.fillna(False), sell.fillna(False)
 
     @staticmethod
     def calculate_all(df):
