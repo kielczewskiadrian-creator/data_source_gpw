@@ -1,5 +1,6 @@
 import pandas as pd
 import pandas_ta_classic as ta
+import numpy as np
 
 class DNAEngine:
     """Zintegrowany silnik DNA V11 - Sygnały TV + Dane do raportów + Metody dodatkowe."""
@@ -54,7 +55,7 @@ class DNAEngine:
 
     @staticmethod
     def calculate_all(df):
-        """Twoja dodatkowa metoda do szerokich wiązek EMA."""
+        """Metoda do szerokich wiązek EMA (wstęgi DNA)."""
         red_p = [3, 4, 5, 7, 8, 9, 10, 11, 12, 15]
         green_p = [30, 35, 40, 45, 50, 60]
         blue_p = [180, 190, 200, 210, 220]
@@ -97,6 +98,18 @@ class DNAAnalyzer:
             mid_green = df['mid_green'].iloc[idx]
             dist_green = ((close_val - mid_green) / mid_green) * 100
             
+            # --- MAPOWANIE LINKU TRADINGVIEW ---
+            # Obsługa formatów: DNP (GPW) oraz ORA.PA (Zagranica)
+            if "." in ticker:
+                parts = ticker.split(".")
+                # Zamiana ORA.PA na PA:ORA (Euronext Paris) lub podobne
+                tv_symbol = f"{parts[1]}:{parts[0]}"
+            else:
+                tv_symbol = f"GPW:{ticker}"
+            
+            tv_link = f"https://pl.tradingview.com/chart/4dItPTLJ/?symbol={tv_symbol}"
+            
+            # --- SYGNAŁY I OPISY ---
             buy_sig, sell_sig = DNAEngine.get_signals(df)
             signal_text = "⚪ neutralny"
             if buy_sig.iloc[idx]: signal_text = "🟢 KUPUJ (Sygnał Potwierdzony)"
@@ -109,20 +122,28 @@ class DNAAnalyzer:
             elif rsi_val > 55: rsi_desc = "✅ DOBRZE: Silny impet."
             else: rsi_desc = "⚪ NEUTRALNIE: Brak siły."
 
+            # Historia wolumenu
             vol_history = []
             for i in range(max(0, idx - 2), idx + 1):
                 v_val = int(df['Volume'].iloc[i])
-                v_rel = v_val / df['vol_ma'].iloc[i]
+                v_rel = v_val / df['vol_ma'].iloc[i] if df['vol_ma'].iloc[i] > 0 else 1
                 v_emoji = "🔥" if v_rel > 2 else ("✨" if v_rel > 1.2 else " ")
                 vol_history.append(f"{df.index[i].strftime('%d.%m')}: {v_val:,} {v_emoji}")
 
             return {
-                "ticker": ticker, "date": current_session.strftime("%Y-%m-%d"), "price": round(float(close_val), 2),
-                "signal": signal_text, "align_desc": align_desc, "rsi_desc": rsi_desc,
-                "vol_history": vol_history, "dist_val": round(dist_green, 1),
-                "rsi_val": round(rsi_val, 1), "slope_val": round(slope_val, 2),
+                "ticker": ticker, 
+                "date": current_session.strftime("%Y-%m-%d"), 
+                "price": round(float(close_val), 2),
+                "signal": signal_text, 
+                "align_desc": align_desc, 
+                "rsi_desc": rsi_desc,
+                "vol_history": vol_history, 
+                "dist_val": round(dist_green, 1),
+                "rsi_val": round(rsi_val, 1), 
+                "slope_val": round(slope_val, 2),
                 "slope_desc": "Trend rośnie" if slope_val > 0.2 else "Brak dynamiki",
-                "dist_desc": "OK" if dist_green < 15 else "Ryzyko odchylenia"
+                "dist_desc": "OK" if dist_green < 15 else "Ryzyko odchylenia",
+                "tv_link": tv_link
             }
         except Exception as e:
             print(f"Błąd Analyzer: {e}"); return None
@@ -162,7 +183,8 @@ class DNAReporter:
         report = [
             f"\n🔍 RAPORT DNA PRO: {data['ticker']} | {data['date']}",
             "=" * 60,
-            f"CENA: {data['price']} PLN | SYGNAŁ: {data['signal']}",
+            f"CENA: {data['price']} | SYGNAŁ: {data['signal']}",
+            f"WYKRES TV: {data['tv_link']}",
             "-" * 60,
             f"1. TREND:    {data['align_desc']}",
             f"2. IMPET:    {data['rsi_val']} -> {data['rsi_desc']}",
@@ -174,3 +196,9 @@ class DNAReporter:
             "=" * 60
         ]
         return "\n".join(report)
+
+# --- PRZYKŁAD UŻYCIA ---
+# df = yf.download("DNP.WA", start="2025-01-01")
+# df = DNAEngine.calculate_indicators(df)
+# data = DNAAnalyzer.prepare_report_data(df, "DNP", "2026-01-19")
+# print(DNAReporter.generate_text_report(data))
