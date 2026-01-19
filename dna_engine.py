@@ -102,8 +102,14 @@ class DNAAnalyzer:
             # Obsługa formatów: DNP (GPW) oraz ORA.PA (Zagranica)
             if "." in ticker:
                 parts = ticker.split(".")
-                # Zamiana ORA.PA na PA:ORA (Euronext Paris) lub podobne
-                tv_symbol = f"{parts[1]}:{parts[0]}"
+                mapping = {
+                    "AS": "ASR",       # Amsterdam (Euronext)
+                    "PA": "EURONEXT",  # Paryż
+                    "DE": "XETR",      # Frankfurt (Xetra)
+                    "WA": "GPW"        # Warszawa
+                }
+                exchange = mapping.get(parts[1], parts[1])
+                tv_symbol = f"{exchange}:{parts[0]}"
             else:
                 tv_symbol = f"GPW:{ticker}"
             
