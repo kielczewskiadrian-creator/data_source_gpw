@@ -212,7 +212,6 @@ class DNAReporter:
             f"\n🔍 RAPORT DNA PRO: {data['ticker']} | {data['date']}",
             "=" * 60,
             f"CENA: {data['price']} | SYGNAŁ: {data['signal']}",
-            f"WYKRES TV: {data['tv_link']}",
             "-" * 60,
             f"1. TREND:    {data['align_desc']}",
             f"2. IMPET:    {data['rsi_val']} -> {data['rsi_desc']}",
