@@ -1,6 +1,7 @@
 import pandas as pd
 import pandas_ta_classic as ta
 import numpy as np
+import re
 
 class DNAEngine:
     """Zintegrowany silnik DNA V11 - Sygnały TV + Dane do raportów + Metody dodatkowe."""
@@ -83,6 +84,40 @@ class DNAEngine:
         return df_h1
         
 class DNAAnalyzer:
+
+    # Mapowanie sufiksu giełdy Yahoo Finance -> kod giełdy na TradingView
+    EXCHANGE_MAPPING = {
+        "AS": "ASR",       # Amsterdam (Euronext)
+        "PA": "EURONEXT",  # Paryż
+        "DE": "XETR",      # Frankfurt (Xetra)
+        "WA": "GPW"        # Warszawa
+    }
+
+    @staticmethod
+    def build_tv_link(ticker):
+        """
+        Buduje link do TradingView na podstawie dowolnego stringa zawierającego ticker.
+        Odporne na formaty typu:
+          - "TEN.WA"
+          - "Ten Square Games (TEN.WA)"
+          - "PGE" (bez sufiksu -> zakładamy GPW)
+        Wyszukuje wzorzec SYMBOL.SUFIKS (np. TEN.WA) w dowolnym miejscu tekstu,
+        zamiast na sztywno ciąć string po pierwszej kropce.
+        """
+        # Szukamy wzorca: 1-6 znaków alfanumerycznych, kropka, 2-4 litery (sufiks giełdy)
+        match = re.search(r'([A-Za-z0-9]{1,8})\.([A-Za-z]{2,4})\b', ticker)
+
+        if match:
+            symbol, suffix = match.group(1), match.group(2).upper()
+            exchange = DNAAnalyzer.EXCHANGE_MAPPING.get(suffix, suffix)
+            tv_symbol = f"{exchange}:{symbol}"
+        else:
+            # Brak kropki / sufiksu -> zakładamy czysty ticker z GPW
+            clean_ticker = ticker.strip()
+            tv_symbol = f"GPW:{clean_ticker}"
+
+        return f"https://pl.tradingview.com/chart/4dItPTLJ/?symbol={tv_symbol}"
+
     @staticmethod
     def prepare_report_data(df, ticker, target_date_str):
         try:
@@ -99,21 +134,8 @@ class DNAAnalyzer:
             dist_green = ((close_val - mid_green) / mid_green) * 100
             
             # --- MAPOWANIE LINKU TRADINGVIEW ---
-            # Obsługa formatów: DNP (GPW) oraz ORA.PA (Zagranica)
-            if "." in ticker:
-                parts = ticker.split(".")
-                mapping = {
-                    "AS": "ASR",       # Amsterdam (Euronext)
-                    "PA": "EURONEXT",  # Paryż
-                    "DE": "XETR",      # Frankfurt (Xetra)
-                    "WA": "GPW"        # Warszawa
-                }
-                exchange = mapping.get(parts[1], parts[1])
-                tv_symbol = f"{exchange}:{parts[0]}"
-            else:
-                tv_symbol = f"GPW:{ticker}"
-            
-            tv_link = f"https://pl.tradingview.com/chart/4dItPTLJ/?symbol={tv_symbol}"
+            # Wydzielone do osobnej, odpornej na format metody build_tv_link()
+            tv_link = DNAAnalyzer.build_tv_link(ticker)
             
             # --- SYGNAŁY I OPISY ---
             buy_sig, sell_sig = DNAEngine.get_signals(df)
@@ -206,5 +228,5 @@ class DNAReporter:
 # --- PRZYKŁAD UŻYCIA ---
 # df = yf.download("DNP.WA", start="2025-01-01")
 # df = DNAEngine.calculate_indicators(df)
-# data = DNAAnalyzer.prepare_report_data(df, "DNP", "2026-01-19")
+# data = DNAAnalyzer.prepare_report_data(df, "DNP.WA", "2026-01-19")
 # print(DNAReporter.generate_text_report(data))
